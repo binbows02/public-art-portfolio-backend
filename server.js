@@ -2,7 +2,6 @@ import express from 'express';
 import cors from 'cors';
 import mysql from 'mysql2/promise';
 import multer from 'multer';
-import path from 'path';
 import 'dotenv/config';
 
 const db = await mysql.createConnection({
@@ -14,17 +13,9 @@ const db = await mysql.createConnection({
 
 console.log('Connected to MySQL');
 
-const storage = multer.diskStorage({
-    destination: './public/uploads/profile',
-
-    filename: (req, file, cb) => {
-        const uniqueName = Date.now() + path.extname(file.originalname);
-
-        cb(null, uniqueName);
-    }
+const upload = multer({
+    storage: multer.memoryStorage()
 });
-
-const upload = multer({ storage });
 
 const app = express();
 
@@ -35,26 +26,31 @@ app.use('/uploads', express.static('./public/uploads'));
 
 app.get('/api/comments', async (req, res) => {
     const [comments] = await db.query(
-        'SELECT * FROM comments ORDER BY date DESC'
+        `SELECT id, username, comment, profile_image, date,
+            profile_image_data IS NOT NULL AS has_profile_image
+     FROM comments
+     ORDER BY date DESC`
     );
 
     res.json(comments);
 });
 
 app.post('/api/comments', upload.single('profileImage'), async (req, res) => {
+    console.log(req.file);
+
     const { username, comment } = req.body;
 
-    const profileImage = req.file
-        ? `./uploads/profile/${req.file.filename}`
+    const profileImageData = req.file
+        ? req.file.buffer
         : null;
 
     const [result] = await db.query(
-        `INSERT INTO comments (username, comment, profile_image)
-         VALUES (?, ?, ?)`,
+        `INSERT INTO comments (username, comment, profile_image_data)
+     VALUES (?, ?, ?)`,
         [
             username || 'Anonymous',
             comment,
-            profileImage
+            profileImageData
         ]
     );
 
@@ -64,6 +60,20 @@ app.post('/api/comments', upload.single('profileImage'), async (req, res) => {
     );
 
     res.json(newComment[0]);
+});
+
+app.get('/api/comments/:id/image', async (req, res) => {
+    const [rows] = await db.query(
+        'SELECT profile_image_data FROM comments WHERE id = ?',
+        [req.params.id]
+    );
+
+    if (!rows.length || !rows[0].profile_image_data) {
+        return res.status(404).send('Image not found');
+    }
+
+    res.set('Content-Type', 'image/jpeg');
+    res.send(rows[0].profile_image_data);
 });
 
 const PORT = process.env.PORT || 5000;
