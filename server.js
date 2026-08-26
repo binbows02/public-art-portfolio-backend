@@ -14,22 +14,29 @@ const db = await mysql.createConnection({
 console.log('Connected to MySQL');
 
 const upload = multer({
-    storage: multer.memoryStorage()
+    storage: multer.memoryStorage(),
+    limits: {
+        fileSize: 2 * 1024 * 1024
+    },
+    fileFilter: (req, file, cb) => {
+        if (file.mimetype.startsWith('image/')) {
+            cb(null, true);
+        } else {
+            cb(new Error('Only images are allowed'));
+        }
+    }
 });
-
 const app = express();
 
 app.use(cors());
 app.use(express.json());
 
-app.use('/uploads', express.static('./public/uploads'));
-
 app.get('/api/comments', async (req, res) => {
     const [comments] = await db.query(
         `SELECT id, username, comment, profile_image, date,
-            profile_image_data IS NOT NULL AS has_profile_image
-     FROM comments
-     ORDER BY date DESC`
+        profile_image_data IS NOT NULL AS has_profile_image
+        FROM comments
+        ORDER BY date DESC`
     );
 
     res.json(comments);
@@ -55,7 +62,10 @@ app.post('/api/comments', upload.single('profileImage'), async (req, res) => {
     );
 
     const [newComment] = await db.query(
-        'SELECT * FROM comments WHERE id = ?',
+        `SELECT id, username, comment, profile_image, date,
+        profile_image_data IS NOT NULL AS has_profile_image
+        FROM comments
+        WHERE id = ?`,
         [result.insertId]
     );
 
